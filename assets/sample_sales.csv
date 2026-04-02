@@ -1,0 +1,19 @@
+date,product,region,units_sold,revenue
+2025-01-15,Widget Pro,North America,120,5998.80
+2025-01-15,Widget Lite,North America,340,6796.60
+2025-01-15,Cloud Connector,North America,55,5499.45
+2025-02-15,Widget Pro,Europe,95,4749.05
+2025-02-15,Widget Lite,Europe,280,5597.20
+2025-02-15,Cloud Connector,Europe,40,3999.60
+2025-03-15,Widget Pro,APAC,60,2999.40
+2025-03-15,Widget Lite,APAC,410,8195.90
+2025-03-15,Cloud Connector,APAC,70,6999.30
+2025-04-15,Widget Pro,North America,150,7498.50
+2025-04-15,Widget Lite,North America,290,5794.10
+2025-04-15,Cloud Connector,North America,65,6499.35
+2025-05-15,Widget Pro,Europe,110,5498.90
+2025-05-15,Widget Lite,Europe,320,6396.80
+2025-05-15,Cloud Connector,Europe,50,4999.50
+2025-06-15,Widget Pro,APAC,85,4249.15
+2025-06-15,Widget Lite,APAC,375,7496.25
+2025-06-15,Cloud Connector,APAC,80,7999.20

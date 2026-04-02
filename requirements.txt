@@ -1,0 +1,22 @@
+# ── Microsoft Agent Framework (core + Foundry provider) ──────────────────────
+agent-framework-foundry --pre
+azure-identity
+
+# ── Foundry Project SDK (Notebook 01 — agent creation + traces) ──────────────
+azure-ai-projects>=2.0.0
+
+# ── Hosted Agent deployment (Notebook 05) ────────────────────────────────────
+azure-ai-agentserver-agentframework
+
+# ── Evaluation SDK (Notebook 05) ─────────────────────────────────────────────
+azure-ai-evaluation>=1.0.0
+
+# ── Environment & Notebooks ──────────────────────────────────────────────────
+python-dotenv
+jupyter
+ipykernel
+ipywidgets
+
+# ── Data helpers (Notebook 02 — Code Interpreter demo) ──────────────────────
+pandas
+matplotlib
