@@ -1,12 +1,13 @@
 # 🤖 Agent Framework Demo — Microsoft Foundry
 
-A progressive demo showcasing the **Microsoft Agent Framework** with Foundry as the provider, through 5 Jupyter notebooks.
+A progressive demo showcasing the **Microsoft Agent Framework** with Foundry as the provider, through 11 hands-on demos (notebooks + scripts) covering single-agent basics through advanced multi-agent orchestration, memory, checkpointing, and skills.
 
 ## Packages Used
 
 | Package | Version | Purpose | Status |
 |---------|---------|---------|--------|
 | `agent-framework-foundry` | 1.7.0 | Agent Framework + Foundry provider (`FoundryChatClient`, `FoundryAgent`) | GA |
+| `agent-framework-orchestrations` | 1.0.0rc2 | Orchestration patterns (Sequential, Graph, GroupChat, HandOff) | RC |
 | `azure-ai-projects` | 2.1.0 | Foundry Project SDK — register agents, enable tracing | GA |
 | `azure-identity` | 1.25.3 | Azure authentication (`AzureCliCredential`) | GA |
 | `python-dotenv` | 1.2.2 | Environment variable management | GA |
@@ -41,40 +42,47 @@ az login
 jupyter notebook
 ```
 
-## Notebooks
+## Notebooks & Demos
 
-| # | Notebook | Agent Framework Features | Required .env | Status |
-|---|----------|--------------------------|---------------|--------|
-| 01 | [Basic Agent](01_basic_agent.ipynb) | `AIProjectClient` → `FoundryAgent`, traces in portal, sessions, streaming | `AZURE_AI_PROJECT_ENDPOINT`, `AZURE_AI_PROJECT_ENDPOINT_FULL`, `AZURE_AI_MODEL_DEPLOYMENT_NAME` | ✅ Supported |
-| 02 | [Tool-Augmented](02_tool_augmented_agent.ipynb) | Code Interpreter, File Search, Web Search, `@tool` decorator | `AZURE_AI_PROJECT_ENDPOINT`, `AZURE_AI_MODEL_DEPLOYMENT_NAME` | ✅ Supported |
-| 03 | [Enterprise Integration](03_enterprise_integration.ipynb) | Hosted MCP, `FoundryAgent`, `agent.as_tool()` | + `MCP_SERVER_URL` (optional) | ✅ Supported |
-| 04 | [Multi-Agent Workflows](04_multi_agent_orchestration.ipynb) | `SequentialBuilder`, `WorkflowBuilder`, sub-workflows, `workflow.as_agent()` | Same as 02 | ✅ Supported |
-| 05 | [Evaluate & Deploy](05_orchestrations_advanced.ipynb) | Advanced orchestrations (group chat, handoff) | Same as 02 | ✅ Supported |
+| # | File | Topic | Key Features |
+|---|------|-------|--------------|
+| 01 | [Basic Agent](01_basic_agent.ipynb) | Single agent basics | `Agent`, `FoundryChatClient`, multi-provider support, server-side tracing in Foundry portal |
+| 02 | [Local Tools (Function Calling)](02_agent_tools_functioncall.ipynb) | Custom tools | `@tool` decorator, `FunctionTool` schema, local tool binding, traced tool calls |
+| 03 | [Built-in Tools](03_agent_tools_builtin.ipynb) | Platform tools | `CodeInterpreterTool`, `FileSearchTool`, `WebSearchTool`, server-side execution |
+| 04 | [MCP Tools](04_agent_tools_mcp.ipynb) | External integrations | Model Context Protocol (MCP), `get_mcp_tool()`, tool approval modes, secure external data |
+| 05 | [Multi-Agent: Graph](05_multi_agent_orchestration_graph.ipynb) | Graph orchestration | `GraphBuilder`, complex multi-agent coordination |
+| 06 | [Multi-Agent: Sequential](06_multi_agent_orchestration_simple.ipynb) | Sequential orchestration | `SequentialBuilder`, linear agent handoff, message streaming |
+| 07 | [Advanced Orchestration](07_orchestrations_advanced.ipynb) | GroupChat & HandOff | GroupChat with orchestrator moderation, HandOff mesh topology, termination conditions |
+| 08 | [Human in the Loop](08_human_in_the_loop.ipynb) | Human approval | `AgentExecutor`, `AgentExecutorRequest/Response`, human approval workflows |
+| 09 | [Checkpointing](09_agent_checkpoint.py) | Pause & resume | `FileCheckpointStorage`, checkpoint persistence, recovery, pre-supplied responses |
+| 10 | [Foundry Memory](10_agent_foundrymemory.ipynb) | Persistent memory | `MemorySearchPreviewTool`, `MemoryStoreDefaultDefinition`, cross-session memory, per-user scoping |
+| 11 | [Skills](11_agent_skill.ipynb) | File-based skills | Skill definitions, subprocess execution, modular agent capabilities |
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                  Microsoft Agent Framework                       │
-│  ┌───────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐  │
-│  │   Agent    │  │  Tools   │  │ Sessions │  │  Workflows   │  │
-│  │ (core)    │  │ Function │  │ Memory   │  │ Sequential   │  │
-│  │           │  │ CodeInt  │  │ State    │  │ Graph-based  │  │
-│  │           │  │ FileSrch │  │          │  │ Sub-workflows│  │
-│  │           │  │ WebSrch  │  │          │  │              │  │
-│  │           │  │ MCP      │  │          │  │              │  │
-│  └─────┬─────┘  └────┬─────┘  └────┬─────┘  └──────┬───────┘  │
-│        └──────────────┴─────────────┴───────────────┘          │
-│                             │                                    │
-│                    FoundryChatClient                             │
-│                    FoundryAgent                                  │
-└─────────────────────┬───────────────────────────────────────────┘
-                      │
-              ┌───────▼────────┐
-              │ Microsoft      │
-              │ Foundry        │
-              │ (cloud)        │
-              └────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      Microsoft Agent Framework                              │
+│                                                                             │
+│  ┌───────────┐  ┌──────────────┐  ┌────────────┐  ┌────────────────────┐  │
+│  │   Agent   │  │    Tools     │  │  Memory &  │  │   Orchestration    │  │
+│  │  (core)   │  │  Function    │  │  State     │  │   Sequential       │  │
+│  │           │  │  CodeInterp  │  │  Checkpoint│  │   Graph-based      │  │
+│  │           │  │  FileSearch  │  │  Foundry   │  │   GroupChat        │  │
+│  │           │  │  WebSearch   │  │  Memory    │  │   HandOff          │  │
+│  │           │  │  MCP         │  │            │  │   Human-in-Loop    │  │
+│  │           │  │  Skills      │  │            │  │                    │  │
+│  └─────┬─────┘  └──────┬──────┘  └─────┬──────┘  └─────────┬──────────┘  │
+│        └────────────────┴───────────────┴───────────────────┘             │
+│                                  │                                         │
+│                         FoundryChatClient                                  │
+└──────────────────────────────────┬────────────────────────────────────────┘
+                                   │
+                           ┌───────▼────────┐
+                           │ Microsoft      │
+                           │ Foundry        │
+                           │ (cloud)        │
+                           └────────────────┘
 ```
 
 ## Prerequisites
@@ -89,21 +97,37 @@ jupyter notebook
 ```
 agent-framework-demo-py/
 ├── .env.template              # Environment config template
-├── .gitignore
 ├── requirements.txt           # Python dependencies
 ├── README.md
+├── LICENSE                    # MIT License
 ├── utils/
 │   ├── __init__.py
-│   └── config.py              # FoundryChatClient setup
+│   └── config.py              # FoundryChatClient + credential helpers
 ├── assets/
 │   ├── product_info.md        # Sample product catalog (File Search)
 │   └── sample_sales.csv       # Sample sales data (Code Interpreter)
+├── skills/
+│   ├── subprocess_script_runner.py   # Skill execution engine
+│   └── file_based_skills/           # Modular skill definitions
+│       └── skills/unit_converter/   # Example: unit conversion skill
+├── tmp/
+│   └── checkpoints_hitl/      # Checkpoint storage for HITL demos
 ├── 01_basic_agent.ipynb
-├── 02_tool_augmented_agent.ipynb
-├── 03_enterprise_integration.ipynb
-├── 04_multi_agent_orchestration.ipynb
-└── 05_evaluate_and_deploy.ipynb
+├── 02_agent_tools_functioncall.ipynb
+├── 03_agent_tools_builtin.ipynb
+├── 04_agent_tools_mcp.ipynb
+├── 05_multi_agent_orchestration_graph.ipynb
+├── 06_multi_agent_orchestration_simple.ipynb
+├── 07_orchestrations_advanced.ipynb
+├── 08_human_in_the_loop.ipynb
+├── 09_agent_checkpoint.py
+├── 10_agent_foundrymemory.ipynb
+└── 11_agent_skill.ipynb
 ```
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
 
 ## References
 
