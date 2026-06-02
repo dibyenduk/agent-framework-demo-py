@@ -4,13 +4,17 @@ A progressive demo showcasing the **Microsoft Agent Framework** with Foundry as 
 
 ## Packages Used
 
-| Package | Purpose | Status |
-|---------|---------|--------|
-| `azure-ai-projects` | Foundry Project SDK — register agents, enable tracing | GA (v2.x) |
-| `agent-framework-foundry` | Agent Framework + Foundry provider (`FoundryChatClient`, `FoundryAgent`) | Preview |
-| `azure-ai-agentserver-agentframework` | Host Agent Framework agents as containers on Foundry | Preview |
-| `azure-ai-evaluation` | Batch evaluation with quality & safety metrics | GA |
-| `azure-identity` | Azure authentication (`AzureCliCredential`) | GA |
+| Package | Version | Purpose | Status |
+|---------|---------|---------|--------|
+| `agent-framework-foundry` | 1.7.0 | Agent Framework + Foundry provider (`FoundryChatClient`, `FoundryAgent`) | GA |
+| `azure-ai-projects` | 2.1.0 | Foundry Project SDK — register agents, enable tracing | GA |
+| `azure-identity` | 1.25.3 | Azure authentication (`AzureCliCredential`) | GA |
+| `python-dotenv` | 1.2.2 | Environment variable management | GA |
+| `jupyter` | 1.1.1 | Jupyter notebook environment | GA |
+| `ipykernel` | 7.2.0 | IPython kernel for Jupyter | GA |
+| `ipywidgets` | 8.1.8 | Interactive widgets for notebooks | GA |
+| `pandas` | 3.0.3 | Data manipulation & analysis | GA |
+| `matplotlib` | 3.10.9 | Data visualization (for notebooks 02+) | GA |
 
 ## Quick Start
 
@@ -39,13 +43,13 @@ jupyter notebook
 
 ## Notebooks
 
-| # | Notebook | Agent Framework Features | Required .env |
-|---|----------|--------------------------|---------------|
-| 01 | [Basic Agent](01_basic_agent.ipynb) | `AIProjectClient` → `FoundryAgent`, traces in portal, sessions, streaming | `AZURE_AI_PROJECT_ENDPOINT`, `AZURE_AI_PROJECT_ENDPOINT_FULL`, `AZURE_AI_MODEL_DEPLOYMENT_NAME` |
-| 02 | [Tool-Augmented](02_tool_augmented_agent.ipynb) | Code Interpreter, File Search, Web Search, `@tool` decorator | `AZURE_AI_PROJECT_ENDPOINT`, `AZURE_AI_MODEL_DEPLOYMENT_NAME` |
-| 03 | [Enterprise Integration](03_enterprise_integration.ipynb) | Hosted MCP, `FoundryAgent`, `agent.as_tool()` | + `MCP_SERVER_URL` (optional) |
-| 04 | [Multi-Agent Workflows](04_multi_agent_orchestration.ipynb) | `SequentialBuilder`, `WorkflowBuilder`, sub-workflows, `workflow.as_agent()` | Same as 02 |
-| 05 | [Evaluate & Deploy](05_evaluate_and_deploy.ipynb) | Batch evaluation, `from_agent_framework()` hosted deploy | + `AZURE_AI_PROJECT` (optional) |
+| # | Notebook | Agent Framework Features | Required .env | Status |
+|---|----------|--------------------------|---------------|--------|
+| 01 | [Basic Agent](01_basic_agent.ipynb) | `AIProjectClient` → `FoundryAgent`, traces in portal, sessions, streaming | `AZURE_AI_PROJECT_ENDPOINT`, `AZURE_AI_PROJECT_ENDPOINT_FULL`, `AZURE_AI_MODEL_DEPLOYMENT_NAME` | ✅ Supported |
+| 02 | [Tool-Augmented](02_tool_augmented_agent.ipynb) | Code Interpreter, File Search, Web Search, `@tool` decorator | `AZURE_AI_PROJECT_ENDPOINT`, `AZURE_AI_MODEL_DEPLOYMENT_NAME` | ✅ Supported |
+| 03 | [Enterprise Integration](03_enterprise_integration.ipynb) | Hosted MCP, `FoundryAgent`, `agent.as_tool()` | + `MCP_SERVER_URL` (optional) | ✅ Supported |
+| 04 | [Multi-Agent Workflows](04_multi_agent_orchestration.ipynb) | `SequentialBuilder`, `WorkflowBuilder`, sub-workflows, `workflow.as_agent()` | Same as 02 | ✅ Supported |
+| 05 | [Evaluate & Deploy](05_orchestrations_advanced.ipynb) | Advanced orchestrations (group chat, handoff) | Same as 02 | ✅ Supported |
 
 ## Architecture
 
