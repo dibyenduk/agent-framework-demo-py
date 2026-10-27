@@ -1,11 +1,24 @@
+"""Stop at human approval, then resume the saved draft in a later process.
+
+Run with ``python 09_agent_checkpoint.py``. At the approval prompt, type
+``pause`` (or ``exit``) to stop, ``approve`` to finish, or revision guidance to
+request another draft. Restart and select the saved run to continue.
+
+Each new run has its own directory under ``tmp/checkpoints_hitl``. Checkpoints
+are immutable history snapshots, not a queue: only the latest snapshot of each
+run determines whether it still needs approval. Completed history is retained
+but is not offered for resume. Legacy checkpoints directly in the root are
+treated as one older run, using only its latest snapshot.
+"""
+
 import asyncio
-from http import client
-import os
 import sys
+from agent_framework.foundry import FoundryChatClient
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from agent_framework import (
     Agent,
@@ -17,11 +30,11 @@ from agent_framework import (
     Message,
     Workflow,
     WorkflowBuilder,
+    WorkflowCheckpoint,
     WorkflowContext,
     handler,
     response_handler,
 )
-from agent_framework.foundry import FoundryChatClient
 from utils.config import get_foundry_client
 
 
@@ -30,38 +43,8 @@ if sys.version_info >= (3, 12):
 else:
     from typing_extensions import override  # type: ignore[import] # pragma: no cover
 
-"""
-Sample: Checkpoint + human-in-the-loop quickstart.
-
-This getting-started sample keeps the moving pieces to a minimum:
-
-1. A brief is turned into a consistent prompt for an AI copywriter.
-2. The copywriter (an `AgentExecutor`) drafts release notes.
-3. A reviewer gateway sends a request for approval for every draft.
-4. The workflow records checkpoints between each superstep so you can stop the
-   program, restart later, and optionally pre-supply human answers on resume.
-
-Key concepts demonstrated
--------------------------
-- Minimal executor pipeline with checkpoint persistence.
-- Human-in-the-loop pause/resume with checkpoint restoration.
-
-Typical pause/resume flow
--------------------------
-1. Run the workflow until a human approval request is emitted.
-2. If the human is offline, exit the program. A checkpoint with
-   ``status=awaiting human response`` now exists.
-3. Later, restart the script, select that checkpoint, and provide the stored
-   human decision when prompted to pre-supply responses.
-   Doing so applies the answer immediately on resume, so the system does **not**
-   re-emit the same ``.
-"""
-
-# Directory used for the sample's temporary checkpoint files. We isolate the
-# demo artefacts so that repeated runs do not collide with other samples and so
-# the clean-up step at the end of the script can simply delete the directory.
-TEMP_DIR = Path(__file__).with_suffix("").parent / "tmp" / "checkpoints_hitl"
-TEMP_DIR.mkdir(parents=True, exist_ok=True)
+TEMP_DIR = Path(__file__).resolve().parent / "tmp" / "checkpoints_hitl"
+WORKFLOW_NAME = "coffee_grinder_workflow"
 
 
 class BriefPreparer(Executor):
@@ -102,9 +85,7 @@ class BriefPreparer(Executor):
 class HumanApprovalRequest:
     """Request sent to the human reviewer."""
 
-    # These fields are intentionally simple because they are serialised into
-    # checkpoints. Keeping them primitive types guarantees the new
-    # `pending_requests_from_checkpoint` helper can reconstruct them on resume.
+    # The dataclass is allowlisted by create_storage for checkpoint restoration.
     prompt: str = ""
     draft: str = ""
     iteration: int = 0
@@ -117,28 +98,21 @@ class ReviewGateway(Executor):
         super().__init__(id=id)
         self._writer_id = writer_id
         self._iteration = 0
-        self._pending_request: HumanApprovalRequest | None = None
-        self._pending_request_id: str | None = None
 
     @handler
     async def on_agent_response(self, response: AgentExecutorResponse, ctx: WorkflowContext) -> None:
         # Capture the agent output so we can surface it to the reviewer and persist iterations.
         self._iteration += 1
 
-        # Create and store the pending request for potential checkpoint restoration
         request_data = HumanApprovalRequest(
             prompt="Review the draft. Reply 'approve' or provide edit instructions.",
             draft=response.agent_response.text,
             iteration=self._iteration,
         )
-        self._pending_request = request_data
-        
-        # Emit a human approval request.
-        response_info = await ctx.request_info(
+        await ctx.request_info(
             request_data=request_data,
             response_type=str,
         )
-        self._pending_request_id = response_info
 
     @response_handler
     async def on_human_feedback(
@@ -149,11 +123,10 @@ class ReviewGateway(Executor):
     ) -> None:
         # The `original_request` is the request we sent earlier that is now being answered.
         reply = feedback.strip()
-        # Clear pending request since we're now handling it
-        self._pending_request = None
-        self._pending_request_id = None
+        if not reply:
+            raise ValueError("Approval requires 'approve' or non-empty revision guidance.")
 
-        if len(reply) == 0 or reply.lower() == "approve":
+        if reply.lower() == "approve":
             # Workflow is completed when the human approves.
             await ctx.yield_output(original_request.draft)
             return
@@ -169,33 +142,25 @@ class ReviewGateway(Executor):
             target_id=self._writer_id,
         )
 
-    def has_pending_request(self) -> bool:
-        """Check if there's a pending human approval request."""
-        return self._pending_request is not None
-
-    def get_pending_request(self) -> HumanApprovalRequest | None:
-        """Get the pending human approval request."""
-        return self._pending_request
-
     @override
     async def on_checkpoint_save(self) -> dict[str, Any]:
-        # Save the current iteration count and pending request in executor state for checkpointing.
-        return {
-            "iteration": self._iteration,
-            "pending_request": self._pending_request,
-            "pending_request_id": self._pending_request_id,
-        }
+        return {"iteration": self._iteration}
 
     @override
     async def on_checkpoint_restore(self, state: dict[str, Any]) -> None:
-        # Restore the iteration count and pending request from executor state during checkpoint recovery.
         self._iteration = state.get("iteration", 0)
-        self._pending_request = state.get("pending_request")
-        self._pending_request_id = state.get("pending_request_id")
 
 
+def read_input(prompt: str) -> str | None:
+    """Treat an interrupted CLI prompt as a pause, not an approval."""
+    try:
+        return input(prompt).strip()
+    except (EOFError, KeyboardInterrupt):
+        print("\nInput interrupted. Existing checkpoints are preserved.")
+        return None
 
-def prompt_for_responses(requests: dict[str, HumanApprovalRequest]) -> dict[str, str]:
+
+def prompt_for_responses(requests: dict[str, HumanApprovalRequest]) -> dict[str, str] | None:
     """Interactive CLI prompt for any live RequestInfo requests."""
 
     responses: dict[str, str] = {}
@@ -205,19 +170,24 @@ def prompt_for_responses(requests: dict[str, HumanApprovalRequest]) -> dict[str,
         print(f"Iteration: {request.iteration}")
         print(request.prompt)
         print("Draft: \n---\n" + request.draft + "\n---")
-        response = input("Type 'approve' or enter revision guidance (or 'exit' to quit): ").strip()
-        if response.lower() == "exit":
-            raise SystemExit("Stopped by user.")
-        responses[request_id] = response
+        while True:
+            response = read_input("Type 'approve', revision guidance, or 'pause'/'exit' to stop: ")
+            if response is None or response.lower() in {"pause", "exit"}:
+                return None
+            if response:
+                responses[request_id] = response
+                break
+            print("Empty input does not approve the draft. Enter 'approve', guidance, or 'pause'.")
 
     return responses
 
 
 async def run_interactive_session(
     workflow: Workflow,
+    storage: FileCheckpointStorage,
     initial_message: str | None = None,
     checkpoint_id: str | None = None,
-) -> str:
+) -> str | None:
     """Run the workflow until it either finishes or pauses for human input."""
 
     requests: dict[str, HumanApprovalRequest] = {}
@@ -225,67 +195,83 @@ async def run_interactive_session(
     completed_output: str | None = None
 
     while True:
-        if responses:
+        if responses is not None:
             event_stream = workflow.run(stream=True, responses=responses)
             requests.clear()
             responses = None
         else:
-            if initial_message:
+            if initial_message is not None:
                 print(f"\nStarting workflow with brief: {initial_message}\n")
                 event_stream = workflow.run(message=initial_message, stream=True)
+                initial_message = None
             elif checkpoint_id:
                 print("\nStarting workflow from checkpoint...\n")
                 event_stream = workflow.run(checkpoint_id=checkpoint_id, stream=True)
+                checkpoint_id = None
             else:
                 raise ValueError("Either initial_message or checkpoint_id must be provided")
 
         async for event in event_stream:
-            if event.type == "status":
-                print(event)
-            elif event.type == "output":
+            if event.type == "output":
                 # Only treat string outputs as final; AgentResponseUpdate is intermediate
                 if isinstance(event.data, str):
                     completed_output = event.data
-                    print(f"[DEBUG] Final output (string): {event.data[:50]}..." if len(str(event.data)) > 50 else f"[DEBUG] Final output: {event.data}")
-                else:
-                    print(f"[DEBUG] Intermediate output event: {type(event.data).__name__}")
             elif event.type == "request_info":
-                print(f"[DEBUG] Request info event: {type(event.data).__name__}")
                 if isinstance(event.data, HumanApprovalRequest):
                     requests[event.request_id] = event.data
                 else:
                     raise ValueError(f"Unexpected request data type: {type(event.data)}")
-            else:
-                print(f"[DEBUG] Event: {event.type}")
 
-        if completed_output:
-            break
+        if completed_output is not None:
+            return completed_output
 
         if requests:
+            checkpoint = await storage.get_latest(workflow_name=WORKFLOW_NAME)
+            if checkpoint is None or not checkpoint.pending_request_info_events:
+                raise RuntimeError("Human approval was requested but no pending checkpoint was saved.")
+            print(f"\nSaved approval checkpoint: {checkpoint.checkpoint_id}")
+            print(f"Checkpoint directory: {storage.storage_path}")
             responses = prompt_for_responses(requests)
+            if responses is None:
+                print("\nPaused safely. Restart this script and select this run to resume the saved draft.")
+                return None
             continue
 
-        # If we resumed from a checkpoint that was already past completion,
-        # the workflow has nothing left to do. This is not an error.
-        if checkpoint_id:
-            print("Workflow already completed at this checkpoint. Select a checkpoint marked [AWAITING HUMAN RESPONSE] to resume.")
-            return "Workflow already completed at this checkpoint."
-
-        raise RuntimeError("Workflow stopped without completing or requesting input")
-
-    return completed_output
+        raise RuntimeError("Workflow stopped without a final draft or pending human approval.")
 
 
-async def main() -> None:
-    """Entry point used by both the initial run and subsequent resumes."""
+@dataclass
+class PendingRun:
+    storage_path: Path
+    checkpoint: WorkflowCheckpoint
 
-    import json
 
-    storage = FileCheckpointStorage(
-        storage_path=TEMP_DIR,
-        allowed_checkpoint_types=["__main__:HumanApprovalRequest"],
+def create_storage(storage_path: Path) -> FileCheckpointStorage:
+    return FileCheckpointStorage(
+        storage_path=storage_path,
+        allowed_checkpoint_types=[f"{HumanApprovalRequest.__module__}:HumanApprovalRequest"],
     )
-    # Create workflow executors
+
+
+async def find_pending_runs(checkpoint_root: Path) -> list[PendingRun]:
+    """Only the latest snapshot in each isolated run can be awaiting approval."""
+    if not checkpoint_root.exists():
+        return []
+
+    run_paths = [checkpoint_root]
+    run_paths.extend(
+        path for path in checkpoint_root.iterdir() if path.is_dir() and path.name.startswith("run-")
+    )
+    pending_runs = []
+    for storage_path in run_paths:
+        latest = await create_storage(storage_path).get_latest(workflow_name=WORKFLOW_NAME)
+        if latest is not None and latest.pending_request_info_events:
+            pending_runs.append(PendingRun(storage_path, latest))
+    return sorted(pending_runs, key=lambda run: datetime.fromisoformat(run.checkpoint.timestamp))
+
+
+def build_workflow(storage: FileCheckpointStorage) -> Workflow:
+    """Build fresh executor instances for either a new run or checkpoint restore."""
     writer_agent = Agent(
         client=get_foundry_client(),
         instructions="Write concise, warm release notes that sound human and helpful.",
@@ -295,77 +281,67 @@ async def main() -> None:
     review_gateway = ReviewGateway(id="review_gateway", writer_id="writer")
     prepare_brief = BriefPreparer(id="prepare_brief", agent_id="writer")
 
-    def build_workflow() -> Workflow:
-        wb = (
-            WorkflowBuilder(name="coffee_grinder_workflow", max_iterations=6, start_executor=prepare_brief, checkpoint_storage=storage, output_from=[review_gateway])
-            .add_edge(prepare_brief, writer)
-            .add_edge(writer, review_gateway)
-            .add_edge(review_gateway, writer)  # revisions loop
+    return (
+        WorkflowBuilder(
+            name=WORKFLOW_NAME,
+            max_iterations=20,
+            start_executor=prepare_brief,
+            checkpoint_storage=storage,
+            output_from=[review_gateway],
         )
-        return wb.build()
+        .add_edge(prepare_brief, writer)
+        .add_edge(writer, review_gateway)
+        .add_edge(review_gateway, writer)
+        .build()
+    )
 
-    # Check for existing checkpoints with pending human responses
-    pending_cps = []
-    checkpoint_files = list(TEMP_DIR.glob("*.json"))
-    for cp_file in checkpoint_files:
-        try:
-            with open(cp_file, 'r') as f:
-                cp_data = json.load(f)
-            if cp_data.get('pending_request_info_events'):
-                pending_cps.append({
-                    'checkpoint_id': cp_file.stem,
-                    'iteration': cp_data.get('iteration_count', 0),
-                    'timestamp': cp_data.get('timestamp', ''),
-                })
-        except Exception:
-            pass
-    pending_cps.sort(key=lambda x: x['timestamp'])
 
-    # If there are pending checkpoints, offer to resume
-    if pending_cps:
-        print(f"\nFound {len(pending_cps)} checkpoint(s) awaiting human response:")
-        for idx, cp in enumerate(pending_cps):
-            print(f"  [{idx}] id={cp['checkpoint_id']} iter={cp['iteration']}")
-
-        selection = input("\nResume from checkpoint? (Enter index, or 'new' to start fresh): ").strip()  # noqa: ASYNC250
-
-        if selection.lower() != "new":
-            # Default to latest pending checkpoint
-            try:
-                idx = int(selection) if selection else len(pending_cps) - 1
-            except ValueError:
-                idx = len(pending_cps) - 1
-
-            if 0 <= idx < len(pending_cps):
-                chosen = pending_cps[idx]
-                print(f"\nResuming from checkpoint: {chosen['checkpoint_id']}")
-
-                # Reset executor state before resume
-                review_gateway._pending_request = None
-                review_gateway._pending_request_id = None
-                review_gateway._iteration = 0
-
-                workflow = build_workflow()
-                result = await run_interactive_session(workflow, checkpoint_id=chosen['checkpoint_id'])
-                print(f"Workflow completed with: {result}")
+async def main(checkpoint_root: Path = TEMP_DIR) -> None:
+    """Choose a pending run or create a separate run without deleting history."""
+    checkpoint_root.mkdir(parents=True, exist_ok=True)
+    pending_runs = await find_pending_runs(checkpoint_root)
+    chosen: PendingRun | None = None
+    if pending_runs:
+        print(f"\nFound {len(pending_runs)} run(s) awaiting human approval:")
+        for index, run in enumerate(pending_runs):
+            label = "legacy" if run.storage_path == checkpoint_root else run.storage_path.name
+            print(f"  [{index}] {label}: checkpoint={run.checkpoint.checkpoint_id}")
+        while True:
+            selection = read_input("\nEnter index (Enter = latest), 'new', or 'exit': ")
+            if selection is None or selection.lower() == "exit":
+                print("Stopped. Existing checkpoints are preserved.")
                 return
-            else:
-                print("Index out of range; starting fresh.")
-
-    # Start fresh: clean up old checkpoints
-    for file in TEMP_DIR.glob("*.json"):
-        file.unlink()
-
-    workflow = build_workflow()
+            if selection.lower() == "new":
+                break
+            try:
+                index = int(selection) if selection else len(pending_runs) - 1
+            except ValueError:
+                print("Invalid selection. Enter a listed index, 'new', or 'exit'.")
+                continue
+            if 0 <= index < len(pending_runs):
+                chosen = pending_runs[index]
+                break
+            print("Index out of range. Choose a listed run.")
 
     brief = (
         "Introduce our limited edition smart coffee grinder. Mention the $249 price, highlight the "
         "sensor that auto-adjusts the grind, and invite customers to pre-order on the website."
     )
 
-    print("Running workflow (human approval required)...")
-    result = await run_interactive_session(workflow, initial_message=brief)
-    print(f"Workflow completed with: {result}")
+    storage_path = chosen.storage_path if chosen else checkpoint_root / f"run-{uuid4()}"
+    storage = create_storage(storage_path)
+    print(f"\nRun directory: {storage_path}")
+    workflow = build_workflow(storage)
+    result = await run_interactive_session(
+        workflow,
+        storage,
+        checkpoint_id=chosen.checkpoint.checkpoint_id if chosen else None,
+        initial_message=None if chosen else brief,
+    )
+    if result is not None:
+        print(f"\nWorkflow completed. Approved draft:\n{result}")
+        print(f"\nCheckpoint history retained in: {storage_path}")
+        print("This completed run will not be offered for resume.")
 
 
 if __name__ == "__main__":

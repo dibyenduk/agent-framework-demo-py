@@ -18,3 +18,9 @@ Thumbs.db
 
 # Evaluation artifacts
 assets/eval_data.jsonl
+
+# Local conversation history
+/sessions/
+
+# Local checkpoint history
+/tmp/checkpoints_hitl/

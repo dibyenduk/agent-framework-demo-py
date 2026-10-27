@@ -1,5 +1,5 @@
 ---
-name: unit-converter
+name: unitconverter
 description: Convert between common units using a multiplication factor. Use when asked to convert miles, kilometers, pounds, or kilograms.
 license: MIT
 compatibility: Works with any model that supports tool use.
